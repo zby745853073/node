@@ -29,8 +29,6 @@ using sp_t = size_t;
 using pcdiff_t = int32_t;
 using spdiff_t = uint32_t;
 
-constexpr pc_t kInvalidPc = 0x80000000;
-
 struct ControlTransferEntry {
   // Distance from the instruction to the label to jump to (forward, but can be
   // negative).
@@ -42,46 +40,6 @@ struct ControlTransferEntry {
 };
 
 using ControlTransferMap = ZoneMap<pc_t, ControlTransferEntry>;
-
-// Representation of frames within the interpreter.
-//
-// Layout of a frame:
-// -----------------
-// stack slot #N  ‾\.
-// ...             |  stack entries: GetStackHeight(); GetStackValue()
-// stack slot #0  _/·
-// local #L       ‾\.
-// ...             |  locals: GetLocalCount(); GetLocalValue()
-// local #P+1      |
-// param #P        |   ‾\.
-// ...             |    | parameters: GetParameterCount(); GetLocalValue()
-// param #0       _/·  _/·
-// -----------------
-//
-class V8_EXPORT_PRIVATE InterpretedFrame {
- public:
-  const WasmFunction* function() const;
-  int pc() const;
-
-  int GetParameterCount() const;
-  int GetLocalCount() const;
-  int GetStackHeight() const;
-  WasmValue GetLocalValue(int index) const;
-  WasmValue GetStackValue(int index) const;
-
- private:
-  friend class WasmInterpreter;
-  // Don't instante InterpretedFrames; they will be allocated as
-  // InterpretedFrameImpl in the interpreter implementation.
-  InterpretedFrame() = delete;
-  DISALLOW_COPY_AND_ASSIGN(InterpretedFrame);
-};
-
-// Deleter struct to delete the underlying InterpretedFrameImpl without
-// violating language specifications.
-struct V8_EXPORT_PRIVATE InterpretedFrameDeleter {
-  void operator()(InterpretedFrame* ptr);
-};
 
 // An interpreter capable of executing WebAssembly.
 class V8_EXPORT_PRIVATE WasmInterpreter {
@@ -105,15 +63,12 @@ class V8_EXPORT_PRIVATE WasmInterpreter {
     AfterCall = 1 << 1
   };
 
-  using FramePtr = std::unique_ptr<InterpretedFrame, InterpretedFrameDeleter>;
-
   // Representation of a thread in the interpreter.
   class V8_EXPORT_PRIVATE Thread {
+   public:
     // Don't instante Threads; they will be allocated as ThreadImpl in the
     // interpreter implementation.
     Thread() = delete;
-
-   public:
     enum ExceptionHandlingResult { HANDLED, UNWOUND };
 
     // Execution control.
@@ -132,10 +87,7 @@ class V8_EXPORT_PRIVATE WasmInterpreter {
     ExceptionHandlingResult RaiseException(Isolate*, Handle<Object> exception);
 
     // Stack inspection and modification.
-    pc_t GetBreakpointPc();
     int GetFrameCount();
-    // The InterpretedFrame is only valid as long as the Thread is paused.
-    FramePtr GetFrame(int index);
     WasmValue GetReturnValue(int index = 0);
     TrapReason GetTrapReason();
 
@@ -146,26 +98,6 @@ class V8_EXPORT_PRIVATE WasmInterpreter {
 
     // Returns the number of calls / function frames executed on this thread.
     uint64_t NumInterpretedCalls();
-
-    // Thread-specific breakpoints.
-    // TODO(wasm): Implement this once we support multiple threads.
-    // bool SetBreakpoint(const WasmFunction* function, int pc, bool enabled);
-    // bool GetBreakpoint(const WasmFunction* function, int pc);
-
-    void AddBreakFlags(uint8_t flags);
-    void ClearBreakFlags();
-
-    // Each thread can have multiple activations, each represented by a portion
-    // of the stack frames of this thread. StartActivation returns the id
-    // (counting from 0 up) of the started activation.
-    // Activations must be properly stacked, i.e. if FinishActivation is called,
-    // the given id must the the latest activation on the stack.
-    uint32_t NumActivations();
-    uint32_t StartActivation();
-    void FinishActivation(uint32_t activation_id);
-    // Return the frame base of the given activation, i.e. the number of frames
-    // when this activation was started.
-    uint32_t ActivationFrameBase(uint32_t activation_id);
   };
 
   WasmInterpreter(Isolate* isolate, const WasmModule* module,
@@ -179,19 +111,6 @@ class V8_EXPORT_PRIVATE WasmInterpreter {
   //==========================================================================
   void Run();
   void Pause();
-
-  // Prepare {function} for stepping in from Javascript.
-  void PrepareStepIn(const WasmFunction* function);
-
-  // Set a breakpoint at {pc} in {function} to be {enabled}. Returns the
-  // previous state of the breakpoint at {pc}.
-  bool SetBreakpoint(const WasmFunction* function, pc_t pc, bool enabled);
-
-  // Gets the current state of the breakpoint at {function}.
-  bool GetBreakpoint(const WasmFunction* function, pc_t pc);
-
-  // Enable or disable tracing for {function}. Return the previous state.
-  bool SetTracing(const WasmFunction* function, bool enabled);
 
   //==========================================================================
   // Thread iteration and inspection.

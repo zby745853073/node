@@ -106,9 +106,14 @@ bool InterpretWasmModuleForTesting(Isolate* isolate,
       case ValueType::kFuncRef:
       case ValueType::kNullRef:
       case ValueType::kExnRef:
+      case ValueType::kRef:
+      case ValueType::kOptRef:
+      case ValueType::kEqRef:
         arguments[i] =
             WasmValue(Handle<Object>::cast(isolate->factory()->null_value()));
         break;
+      case ValueType::kI8:
+      case ValueType::kI16:
       case ValueType::kStmt:
       case ValueType::kBottom:
       case ValueType::kS128:
@@ -125,12 +130,6 @@ bool InterpretWasmModuleForTesting(Isolate* isolate,
   WasmInterpreter::Thread* thread = interpreter->GetThread(0);
   thread->Reset();
 
-  // Start an activation so that we can deal with stack overflows. We do not
-  // finish the activation. An activation is just part of the state of the
-  // interpreter, and we do not reuse the interpreter anyways. In addition,
-  // finishing the activation is not correct in all cases, e.g. when the
-  // execution of the interpreter did not finish after kMaxNumSteps.
-  thread->StartActivation();
   thread->InitFrame(&instance->module()->functions[function_index],
                     arguments.get());
   WasmInterpreter::State interpreter_result = thread->Run(kMaxNumSteps);
@@ -203,12 +202,6 @@ WasmInterpretationResult InterpretWasmModule(
   WasmInterpreter::Thread* thread = interpreter->GetThread(0);
   thread->Reset();
 
-  // Start an activation so that we can deal with stack overflows. We do not
-  // finish the activation. An activation is just part of the state of the
-  // interpreter, and we do not reuse the interpreter anyways. In addition,
-  // finishing the activation is not correct in all cases, e.g. when the
-  // execution of the interpreter did not finish after kMaxNumSteps.
-  thread->StartActivation();
   thread->InitFrame(&(instance->module()->functions[function_index]), args);
   WasmInterpreter::State interpreter_result = thread->Run(kMaxNumSteps);
 

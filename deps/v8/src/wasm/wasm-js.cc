@@ -73,8 +73,12 @@ class WasmStreaming::WasmStreamingImpl {
 
   void SetClient(std::shared_ptr<Client> client) {
     streaming_decoder_->SetModuleCompiledCallback(
-        [client](const std::shared_ptr<i::wasm::NativeModule>& native_module) {
-          client->OnModuleCompiled(Utils::Convert(native_module));
+        [client, streaming_decoder = streaming_decoder_](
+            const std::shared_ptr<i::wasm::NativeModule>& native_module) {
+          i::Vector<const char> url = streaming_decoder->url();
+          auto compiled_wasm_module =
+              CompiledWasmModule(native_module, url.begin(), url.size());
+          client->OnModuleCompiled(compiled_wasm_module);
         });
   }
 
@@ -89,37 +93,48 @@ class WasmStreaming::WasmStreamingImpl {
 };
 
 WasmStreaming::WasmStreaming(std::unique_ptr<WasmStreamingImpl> impl)
-    : impl_(std::move(impl)) {}
+    : impl_(std::move(impl)) {
+  TRACE_EVENT0("v8.wasm", "wasm.InitializeStreaming");
+}
 
 // The destructor is defined here because we have a unique_ptr with forward
 // declaration.
 WasmStreaming::~WasmStreaming() = default;
 
 void WasmStreaming::OnBytesReceived(const uint8_t* bytes, size_t size) {
+  TRACE_EVENT1("v8.wasm", "wasm.OnBytesReceived", "num_bytes", size);
   impl_->OnBytesReceived(bytes, size);
 }
 
-void WasmStreaming::Finish() { impl_->Finish(); }
+void WasmStreaming::Finish() {
+  TRACE_EVENT0("v8.wasm", "wasm.FinishStreaming");
+  impl_->Finish();
+}
 
 void WasmStreaming::Abort(MaybeLocal<Value> exception) {
+  TRACE_EVENT0("v8.wasm", "wasm.AbortStreaming");
   impl_->Abort(exception);
 }
 
 bool WasmStreaming::SetCompiledModuleBytes(const uint8_t* bytes, size_t size) {
+  TRACE_EVENT0("v8.wasm", "wasm.SetCompiledModuleBytes");
   return impl_->SetCompiledModuleBytes(bytes, size);
 }
 
 void WasmStreaming::SetClient(std::shared_ptr<Client> client) {
+  TRACE_EVENT0("v8.wasm", "wasm.WasmStreaming.SetClient");
   impl_->SetClient(client);
 }
 
 void WasmStreaming::SetUrl(const char* url, size_t length) {
+  TRACE_EVENT0("v8.wasm", "wasm.SetUrl");
   impl_->SetUrl(internal::VectorOf(url, length));
 }
 
 // static
 std::shared_ptr<WasmStreaming> WasmStreaming::Unpack(Isolate* isolate,
                                                      Local<Value> value) {
+  TRACE_EVENT0("v8.wasm", "wasm.WasmStreaming.Unpack");
   i::HandleScope scope(reinterpret_cast<i::Isolate*>(isolate));
   auto managed =
       i::Handle<i::Managed<WasmStreaming>>::cast(Utils::OpenHandle(*value));
@@ -331,14 +346,10 @@ class InstantiateBytesResultResolver
         isolate_->factory()->NewJSObject(isolate_->object_function());
 
     i::Handle<i::String> instance_name =
-        isolate_->factory()
-            ->NewStringFromOneByte(i::StaticCharVector("instance"))
-            .ToHandleChecked();
+        isolate_->factory()->NewStringFromStaticChars("instance");
 
     i::Handle<i::String> module_name =
-        isolate_->factory()
-            ->NewStringFromOneByte(i::StaticCharVector("module"))
-            .ToHandleChecked();
+        isolate_->factory()->NewStringFromStaticChars("module");
 
     i::JSObject::AddProperty(isolate_, result, instance_name, instance,
                              i::NONE);
@@ -1364,6 +1375,13 @@ void WebAssemblyGlobal(const v8::FunctionCallbackInfo<v8::Value>& args) {
       }
       break;
     }
+    case i::wasm::ValueType::kRef:
+    case i::wasm::ValueType::kOptRef:
+    case i::wasm::ValueType::kEqRef:
+      // TODO(7748): Implement these.
+      UNIMPLEMENTED();
+    case i::wasm::ValueType::kI8:
+    case i::wasm::ValueType::kI16:
     case i::wasm::ValueType::kStmt:
     case i::wasm::ValueType::kS128:
     case i::wasm::ValueType::kBottom:
@@ -1584,7 +1602,7 @@ void WebAssemblyTableGetLength(
       v8::Number::New(isolate, receiver->current_length()));
 }
 
-// WebAssembly.Table.grow(num) -> num
+// WebAssembly.Table.grow(num, init_value = null) -> num
 void WebAssemblyTableGrow(const v8::FunctionCallbackInfo<v8::Value>& args) {
   v8::Isolate* isolate = args.GetIsolate();
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
@@ -1598,8 +1616,20 @@ void WebAssemblyTableGrow(const v8::FunctionCallbackInfo<v8::Value>& args) {
     return;
   }
 
-  int old_size = i::WasmTableObject::Grow(i_isolate, receiver, grow_by,
-                                          i_isolate->factory()->null_value());
+  i::Handle<i::Object> init_value = i_isolate->factory()->null_value();
+  auto enabled_features = i::wasm::WasmFeatures::FromIsolate(i_isolate);
+  if (enabled_features.has_typed_funcref()) {
+    if (args.Length() >= 2 && !args[1]->IsUndefined()) {
+      init_value = Utils::OpenHandle(*args[1]);
+    }
+    if (!i::WasmTableObject::IsValidElement(i_isolate, receiver, init_value)) {
+      thrower.TypeError("Argument 1 must be a valid type for the table");
+      return;
+    }
+  }
+
+  int old_size =
+      i::WasmTableObject::Grow(i_isolate, receiver, grow_by, init_value);
 
   if (old_size < 0) {
     thrower.RangeError("failed to grow table by %u", grow_by);
@@ -1812,6 +1842,13 @@ void WebAssemblyGlobalGetValueCommon(
                      receiver->GetRef()->IsNull());
       return_value.Set(Utils::ToLocal(receiver->GetRef()));
       break;
+    case i::wasm::ValueType::kRef:
+    case i::wasm::ValueType::kOptRef:
+    case i::wasm::ValueType::kEqRef:
+      // TODO(7748): Implement these.
+      UNIMPLEMENTED();
+    case i::wasm::ValueType::kI8:
+    case i::wasm::ValueType::kI16:
     case i::wasm::ValueType::kBottom:
     case i::wasm::ValueType::kStmt:
     case i::wasm::ValueType::kS128:
@@ -1897,6 +1934,13 @@ void WebAssemblyGlobalSetValue(
       }
       break;
     }
+    case i::wasm::ValueType::kRef:
+    case i::wasm::ValueType::kOptRef:
+    case i::wasm::ValueType::kEqRef:
+      // TODO(7748): Implement these.
+      UNIMPLEMENTED();
+    case i::wasm::ValueType::kI8:
+    case i::wasm::ValueType::kI16:
     case i::wasm::ValueType::kBottom:
     case i::wasm::ValueType::kStmt:
     case i::wasm::ValueType::kS128:

@@ -204,6 +204,7 @@ namespace compiler {
   V(MipsI32x4GtU)                  \
   V(MipsI32x4GeU)                  \
   V(MipsI32x4Abs)                  \
+  V(MipsI32x4BitMask)              \
   V(MipsI16x8Splat)                \
   V(MipsI16x8ExtractLaneU)         \
   V(MipsI16x8ExtractLaneS)         \
@@ -232,6 +233,7 @@ namespace compiler {
   V(MipsI16x8GeU)                  \
   V(MipsI16x8RoundingAverageU)     \
   V(MipsI16x8Abs)                  \
+  V(MipsI16x8BitMask)              \
   V(MipsI8x16Splat)                \
   V(MipsI8x16ExtractLaneU)         \
   V(MipsI8x16ExtractLaneS)         \
@@ -259,18 +261,19 @@ namespace compiler {
   V(MipsI8x16GeU)                  \
   V(MipsI8x16RoundingAverageU)     \
   V(MipsI8x16Abs)                  \
+  V(MipsI8x16BitMask)              \
   V(MipsS128And)                   \
   V(MipsS128Or)                    \
   V(MipsS128Xor)                   \
   V(MipsS128Not)                   \
   V(MipsS128Select)                \
   V(MipsS128AndNot)                \
-  V(MipsS1x4AnyTrue)               \
-  V(MipsS1x4AllTrue)               \
-  V(MipsS1x8AnyTrue)               \
-  V(MipsS1x8AllTrue)               \
-  V(MipsS1x16AnyTrue)              \
-  V(MipsS1x16AllTrue)              \
+  V(MipsV32x4AnyTrue)              \
+  V(MipsV32x4AllTrue)              \
+  V(MipsV16x8AnyTrue)              \
+  V(MipsV16x8AllTrue)              \
+  V(MipsV8x16AnyTrue)              \
+  V(MipsV8x16AllTrue)              \
   V(MipsS32x4InterleaveRight)      \
   V(MipsS32x4InterleaveLeft)       \
   V(MipsS32x4PackEven)             \

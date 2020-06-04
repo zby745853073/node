@@ -529,20 +529,6 @@ function dummy_func() {
   assertEquals(obj3, instance2.exports.reexport3.value);
 })();
 
-(function TestImportImmutableAnyFuncGlobalAsAnyRef() {
-  print(arguments.callee.name);
-  let builder1 = new WasmModuleBuilder();
-  const g3 = builder1.addGlobal(kWasmAnyFunc, true).exportAs("e3");
-  builder1.addGlobal(kWasmAnyRef, false).exportAs("e1"); // Dummy.
-  builder1.addGlobal(kWasmAnyFunc, false).exportAs("e2"); // Dummy.
-  const instance1 = builder1.instantiate();
-
-  let builder2 = new WasmModuleBuilder();
-  const i1 = builder2.addImportedGlobal('exports', 'e1', kWasmAnyRef, false);
-  const i2 = builder2.addImportedGlobal('exports', 'e2', kWasmAnyRef, false);
-  builder2.instantiate(instance1);
-})();
-
 (function TestImportMutableAnyFuncGlobalAsAnyRefFails() {
   print(arguments.callee.name);
   let builder1 = new WasmModuleBuilder();
@@ -560,21 +546,14 @@ function dummy_func() {
 (function TestRefFuncGlobalInit() {
   print(arguments.callee.name);
   let builder = new WasmModuleBuilder();
-  const g_ref = builder.addGlobal(kWasmAnyRef, true);
   const g_func = builder.addGlobal(kWasmAnyFunc, true);
-  const f_ref = builder.addFunction('get_anyref_global', kSig_r_v)
-                    .addBody([kExprGlobalGet, g_ref.index])
-                    .exportAs('get_anyref_global');
   const f_func = builder.addFunction('get_anyfunc_global', kSig_a_v)
                      .addBody([kExprGlobalGet, g_func.index])
                      .exportAs('get_anyfunc_global');
-  builder.addDeclarativeElementSegment([f_ref.index, f_func.index]);
-  g_ref.function_index = f_ref.index;
+  builder.addDeclarativeElementSegment([f_func.index]);
   g_func.function_index = f_func.index;
 
   const instance = builder.instantiate();
-  assertEquals(
-      instance.exports.get_anyref_global, instance.exports.get_anyref_global());
   assertEquals(
       instance.exports.get_anyfunc_global,
       instance.exports.get_anyfunc_global());

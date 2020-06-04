@@ -7,8 +7,8 @@
 #include <cstdlib>
 
 #include "src/heap/heap-write-barrier-inl.h"
+#include "src/heap/incremental-marking.h"
 #include "src/objects/heap-object.h"
-#include "src/objects/slots-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -37,6 +37,26 @@ void BasicMemoryChunk::ReleaseMarkingBitmap() {
   DCHECK_NOT_NULL(marking_bitmap_);
   free(marking_bitmap_);
   marking_bitmap_ = nullptr;
+}
+
+// static
+BasicMemoryChunk* BasicMemoryChunk::Initialize(Heap* heap, Address base,
+                                               size_t size, Address area_start,
+                                               Address area_end,
+                                               BaseSpace* owner,
+                                               VirtualMemory reservation) {
+  BasicMemoryChunk* chunk = FromAddress(base);
+  DCHECK_EQ(base, chunk->address());
+  new (chunk) BasicMemoryChunk(size, area_start, area_end);
+
+  chunk->heap_ = heap;
+  chunk->set_owner(owner);
+  chunk->reservation_ = std::move(reservation);
+  chunk->high_water_mark_ = static_cast<intptr_t>(area_start - base);
+  chunk->allocated_bytes_ = chunk->area_size();
+  chunk->wasted_memory_ = 0;
+
+  return chunk;
 }
 
 }  // namespace internal
